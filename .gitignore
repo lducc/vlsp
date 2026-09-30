@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.venv*/
+.env
+runs/
+.ruff_cache/
+
+# competition and external data
+VLSP/
+data/
+train.json
+public_test.json
+private_test.json
+public_test_images/
+private_test_images/
+*.zip
+
+# local agent metadata
+AGENTS.md
+.pi/
+.mcp.json
+.agents/
+.codex/
+.gitdata/
+.vibe-wise/
+archive-*/

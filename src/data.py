@@ -56,3 +56,22 @@ def parse_program(program):
             raise ValueError(f"Malformed program step: {raw_step!r}")
         steps.append((match.group(1), split_top_level(match.group(2))))
     return steps
+
+
+def program_skeleton(program):
+    steps = []
+    for op, args in parse_program(program):
+        if op in ARITHMETIC_OPERATIONS:
+            args = [a if re.fullmatch(r"#\d+", a.strip()) or a.strip() in {"1", "100", "1000"} else "N" for a in args]
+        else:
+            args = ["S"] + ["none" if a.strip().lower() == "none" else "L" for a in args[1:]]
+        steps.append(f"{op}({';'.join(args)})")
+    return "; ".join(steps)
+
+
+def document_key(record):
+    """Same images + same tables = same source document. Folds are grouped by this."""
+    images = sorted(record.get("images", {}).values())
+    tables = sorted(hashlib.sha256(t.encode("utf-8")).hexdigest() for t in record.get("tables", {}).values())
+    payload = json.dumps({"images": images, "tables": tables}, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]

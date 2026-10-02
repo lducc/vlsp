@@ -75,3 +75,58 @@ def document_key(record):
     tables = sorted(hashlib.sha256(t.encode("utf-8")).hexdigest() for t in record.get("tables", {}).values())
     payload = json.dumps({"images": images, "tables": tables}, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def modality(record):
+    steps = parse_program(record["qa"]["program"])
+    ops = {op for op, _ in steps}
+    parts = []
+    if ops & CHART_OPERATIONS:
+        parts.append("chart")
+    if ops & TABLE_OPERATIONS:
+        parts.append("table")
+    if any(re.fullmatch(r"-?\d+(?:\.\d+)?%?", a.strip()) for op, args in steps if op in ARITHMETIC_OPERATIONS for a in args):
+        parts.append("literal")
+    return "+".join(parts) or "literal-only"
+
+
+def make_folds(records):
+    """Whole documents per fold; modality and common program skeletons balanced greedily."""
+    docs = defaultdict(list)
+    for r in records:
+        docs[document_key(r)].append(r)
+
+    common = {s for s, _ in Counter(program_skeleton(r["qa"]["program"]) for r in records).most_common(20)}
+    features = {}
+    for key, rows in docs.items():
+        f = Counter()
+        for r in rows:
+            f["modality:" + modality(r)] += 1
+            s = program_skeleton(r["qa"]["program"])
+            f["skeleton:" + (s if s in common else "<other>")] += 1
+        f["questions"] = len(rows)
+        f["documents"] = 1
+        features[key] = f
+    totals = sum(features.values(), Counter())
+    k = 5
+    targets = {name: total / k for name, total in totals.items()}
+
+    def rarity(key):
+        return sum(v / totals[name] for name, v in features[key].items() if name != "questions")
+
+    order = sorted(docs, key=lambda key: (-rarity(key), -len(docs[key]), key))
+    fold_features = [Counter() for _ in range(k)]
+    folds = {}
+
+    def cost(i, f):
+        cur = fold_features[i]
+        new = cur + f
+        delta = sum(((new[n] - t) / max(t, 1.0)) ** 2 - ((cur[n] - t) / max(t, 1.0)) ** 2 for n, t in targets.items())
+        return delta, cur["questions"], i
+
+    for key in order:
+        best = min(range(k), key=lambda i: cost(i, features[key]))
+        fold_features[best].update(features[key])
+        for r in docs[key]:
+            folds[r["qid"]] = best
+    return folds

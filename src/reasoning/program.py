@@ -68,3 +68,39 @@ def program_equal(pred, gold):
         return all(close(value(g, x), value(p, x)) for x in POINTS)
     except Exception:  # malformed predictions score zero
         return False
+
+
+def is_valid_program(program, record):
+    try:
+        steps = parse_program(program)
+    except ValueError:
+        return False
+    if not steps:
+        return False
+    for i, (op, args) in enumerate(steps):
+        if op not in ARITHMETIC_OPERATIONS | TABLE_OPERATIONS | CHART_OPERATIONS:
+            return False
+        if len(args) != (2 if op in ARITHMETIC_OPERATIONS else 4):
+            return False
+        for a in args:
+            ref = re.fullmatch(r"#(\d+)", a.strip())
+            if ref and int(ref.group(1)) >= i:
+                return False
+        source = args[0].strip()
+        if op in CHART_OPERATIONS and source not in record["images"]:
+            return False
+        if op in TABLE_OPERATIONS and source not in record["tables"]:
+            return False
+    return True
+
+
+def score(preds, rows):
+    hits = valid = skeleton = 0
+    for row in rows:
+        pred, gold = preds[row["qid"]]["program"], row["target"]
+        ok = is_valid_program(pred, row["record"])
+        hits += program_equal(pred, gold)
+        valid += ok
+        skeleton += ok and program_skeleton(pred) == program_skeleton(gold)
+    n = len(rows)
+    return {"n": n, "pa": hits / n, "valid_rate": valid / n, "skeleton_accuracy": skeleton / n}

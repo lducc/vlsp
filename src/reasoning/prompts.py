@@ -51,3 +51,44 @@ def bm25(records):
                 yield records[i]
 
     return rank
+
+
+def build_prompt(record, demos, cards):
+    parts = [f"EXAMPLE\nQuestion: {d['qa']['question']}\nProgram: {d['qa']['program']}" for d in demos]
+    evidence = ["TEXT", *record["text"]]
+    for name, table in record["tables"].items():
+        evidence += [name, table]
+    evidence.append("IMAGES")
+    for name, filename in record["images"].items():
+        evidence.append(f"{name}: {filename}")
+        if filename in cards:
+            evidence.append(json.dumps(cards[filename], ensure_ascii=False))
+    parts.append("TARGET\n" + "\n".join(evidence) + f"\nQuestion: {record['qa']['question']}\nProgram:")
+    return "\n\n".join(parts)
+
+
+def build_rows(targets, pool, cards):
+    rank = bm25(pool)
+    rows = []
+    for r in targets:
+        doc = document_key(r)
+        # never take demos from the target's own document
+        demos = []
+        for d in rank(r["qa"]["question"]):
+            if d["qid"] != r["qid"] and document_key(d) != doc:
+                demos.append(d)
+                if len(demos) == 10:
+                    break
+        assert len(demos) == 10, r["qid"]
+        rows.append({"qid": r["qid"], "prompt": build_prompt(r, demos, cards), "target": r["qa"].get("program"),
+                     "demonstration_qids": [d["qid"] for d in demos], "record": r})
+    return rows
+
+
+def fold_rows(fold):
+    records = load_json("VLSP/train.json")
+    folds = make_folds(records)
+    cards = load_chart_cards("runs/charts/train_8bz.jsonl")
+    train = [r for r in records if folds[r["qid"]] != fold]
+    heldout = [r for r in records if folds[r["qid"]] == fold]
+    return build_rows(train, train, cards), build_rows(heldout, train, cards)

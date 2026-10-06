@@ -92,3 +92,38 @@ def fold_rows(fold):
     train = [r for r in records if folds[r["qid"]] != fold]
     heldout = [r for r in records if folds[r["qid"]] == fold]
     return build_rows(train, train, cards), build_rows(heldout, train, cards)
+
+
+def chat(tokenizer, prompt, answer=None):
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
+    if answer is not None:
+        messages.append({"role": "assistant", "content": answer})
+    return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=answer is None,
+                                         enable_thinking=False)
+
+
+def encode(row, tokenizer):
+    prefix = tokenizer(chat(tokenizer, row["prompt"]), add_special_tokens=False).input_ids
+    full = tokenizer(chat(tokenizer, row["prompt"], row["target"]), add_special_tokens=False).input_ids
+    assert full[: len(prefix)] == prefix, f"chat template prefix mismatch for {row['qid']}"
+    return {"input_ids": full, "labels": [-100] * len(prefix) + full[len(prefix):]}
+
+
+def parse_response(response):
+    response = response.replace("```", "").strip()
+    tagged = re.search(r"<program>\s*(.*?)\s*</program>", response, re.DOTALL | re.IGNORECASE)
+    if tagged:
+        response = tagged.group(1).strip()
+    ops = r"(?:add|subtract|multiply|divide|exp|greater|table_(?:max|min|sum|average)|chart_(?:at|max|min|sum|average|total))"
+    match = re.search(ops + r"\(.*", response, re.DOTALL)
+    program = match.group(0).strip() if match else response
+    try:
+        steps = parse_program(program)
+    except ValueError:
+        return program
+    out = []
+    for op, args in steps:
+        args = [a.strip() for a in args]
+        args = [a[1:-1].strip() if len(a) >= 2 and a[0] == a[-1] and a[0] in "\"'" else a for a in args]
+        out.append(f"{op}({'; '.join(args)})")
+    return "; ".join(out)

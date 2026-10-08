@@ -87,3 +87,40 @@ def push(run_dir):
     api.upload_folder(repo_id=repo, folder_path=str(run_dir), path_in_repo=path,
                       ignore_patterns=["*optimizer.pt", "*scheduler.pt", "*rng_state*"])
     print(f"pushed {run_dir} -> {repo}/{path}")
+
+
+def load(adapter=None, nf4=True):
+    quant = None
+    if nf4:
+        quant = transformers.BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                                                bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)
+    model = transformers.Qwen3_5ForConditionalGeneration.from_pretrained(
+        NAME, revision=REVISION, quantization_config=quant, dtype=torch.bfloat16,
+        device_map={"": torch.cuda.current_device()}, attn_implementation="sdpa",
+    )
+    model.generation_config.eos_token_id = STOP_IDS
+    tokenizer = transformers.AutoTokenizer.from_pretrained(NAME, revision=REVISION)
+    if adapter is not None:
+        model = peft.PeftModel.from_pretrained(model, adapter)
+    return model, tokenizer
+
+
+def predict(model, tokenizer, rows, out_path):
+    preds = {}
+    if out_path.exists():
+        for line in out_path.open(encoding="utf-8"):
+            item = json.loads(line)
+            preds[item["qid"]] = item
+    model.eval()
+    for i, row in enumerate(rows, start=1):
+        if row["qid"] in preds:
+            continue
+        inputs = tokenizer(chat(tokenizer, row["prompt"]), return_tensors="pt", add_special_tokens=False).to(model.device)
+        with torch.inference_mode():
+            out = model.generate(**inputs, max_new_tokens=512, do_sample=False)
+        response = tokenizer.decode(out[0, inputs.input_ids.shape[1]:], skip_special_tokens=True)
+        preds[row["qid"]] = {"qid": row["qid"], "response": response, "program": parse_response(response)}
+        with out_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(preds[row["qid"]], ensure_ascii=False) + "\n")
+        print(f"[{i}/{len(rows)}] {row['qid']}", flush=True)
+    return preds

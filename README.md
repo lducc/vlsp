@@ -1,7 +1,36 @@
 # VLSP 2026 Numerical Reasoning QA
 
-Given a Vietnamese financial report with text, HTML tables and chart images, this system writes the
-reasoning program that answers a question about it.
+Team Arcane's system for the VLSP 2026 shared task on multimodal numerical reasoning over Vietnamese
+financial reports. Given a report with text, HTML tables and chart images, it writes the reasoning
+program that answers a question about it.
+
+Paper: [Retrieval-Augmented Fine-Tuning for Vietnamese Multimodal Numerical Reasoning](paper/main.pdf).
+Chart cards: [lducc/vlsp2026-chart-cards](https://huggingface.co/datasets/lducc/vlsp2026-chart-cards).
+
+## Results
+
+Second by Program Accuracy (PA) on both the public and the private leaderboard, with a 4B writer and one
+writer pass per question.
+
+| Team | Public rank | Public PA | Private rank | Private PA | Private EA |
+|---|---:|---:|---:|---:|---:|
+| thanhducsvbg | 3 | 74.73 | 1 | 79.17 | 89.33 |
+| **Arcane (ours)** | **2** | **75.16** | **2** | **78.66** | **87.61** |
+| Taekz | 9 | 4.14 | 3 | 76.42 | 87.44 |
+| bachanglinhngulam | 1 | 75.60 | 4 | 74.35 | 86.92 |
+| rudeus | 5 | 67.10 | 5 | 73.32 | 85.71 |
+| HUNTER | 4 | 69.72 | 6 | 72.46 | 83.30 |
+
+Our variants on the test sets:
+
+| Combination | Epochs | Writer passes | Public PA | Private PA | Private EA |
+|---|---:|---:|---:|---:|---:|
+| Adapter soup (submitted) | 3 | 1 | 75.16 | 78.66 | 87.61 |
+| Adapter soup | 2 | 1 | 73.20 | 77.45 | 88.47 |
+| Sequence ensemble | 2 | 3 | 72.33 | 77.28 | 88.30 |
+
+On held-out training reports, fine-tuning raises PA from 45.6 (base Qwen3.5-4B with the same ten BM25
+examples) to 73.0, and BM25 examples beat random ones by 3.7 points.
 
 ## Example
 
